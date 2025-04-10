@@ -1,1 +1,370 @@
+# ==========================================================
+# RESULTS SCRIPT - Willow Warbler SDM Projections (2000–2020)
+# Author: Amy Cockburn-Pittner
+# Description: Generates figures for Results chapter (Section 3)
+# ==========================================================
 
+# Load required libraries
+library(terra)
+library(ggplot2)
+library(dplyr)
+library(sf)
+library(RColorBrewer)
+library(patchwork)
+library(viridis)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Load UK shapefile for map overlay
+uk_outline <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  filter(sovereignt == "United Kingdom")
+
+# Function: Raster to DataFram
+raster_to_df <- function(file, label) {
+  r <- rast(file)
+  df <- as.data.frame(r, xy = TRUE, na.rm = TRUE)
+  colnames(df)[3] <- "suitability"
+  df$Period <- label
+  return(df)
+}
+
+
+
+
+# ===============================
+# 3.1 Variable Contributions
+# ===============================
+results <- read.csv("Maxent_Model_2000_ALLBIO/maxentResults.csv") #Read in to confirm top contributers
+contributions <- results[, grep("contribution", colnames(results))]
+round(contributions, 2)
+
+importance_df <- data.frame(
+  Variable = c("BIO4", "BIO3", "BIO5", "BIO1", "BIO10"),
+  Contribution = c(47.66, 12.49, 13.22, 9.31, 5.23)
+)%>%
+  arrange(desc(Contribution)) %>%
+  mutate(Variable = factor(Variable, levels = Variable))
+
+fig1 <- ggplot(importance_df, aes(x = Variable, y = Contribution, fill = Variable)) +
+  geom_bar(stat = "identity", width = 0.7) +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  scale_fill_brewer(palette = "Set2") +
+  labs(
+    title = "Top 5 Variable Contributions (2000 Model)",
+    x = "Bioclimatic Variable", y = "Contribution (%)"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(hjust = 0.5, face = "bold"),
+    axis.text.x = element_text(angle = 30, hjust = 1),
+    legend.position = "none"
+  )
+ggsave("figures/Figure1_Top5_VariableContributions.png", fig1, width = 7, height = 5)
+
+
+
+
+# ===============================
+# 3.2 Habitat Suitability Plots
+# ===============================
+# Load necessary libraries
+library(terra)
+library(ggplot2)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+# Load UK outline
+uk_outline <- ne_countries(scale = "medium", returnclass = "sf") %>%
+  dplyr::filter(sovereignt == "United Kingdom")
+
+# Load 2000 suitability raster
+raster_2000 <- rast("willow_warbler_2000_top5BIOFINAL.tif")
+
+# Convert raster to dataframe
+suitability_2000_df <- as.data.frame(raster_2000, xy = TRUE)
+colnames(suitability_2000_df)[3] <- "suitability"
+
+# Plot
+ggplot() +
+  geom_tile(data = suitability_2000_df, aes(x = x, y = y, fill = suitability)) +
+  geom_sf(data = uk_outline, fill = NA, color = "white", linewidth = 0.3) +
+  scale_fill_viridis_c(
+    name = "Suitability",
+    limits = c(0, 0.6),  # based on your 2000 max suitability
+    option = "D",
+    oob = scales::squish,
+    na.value = "lightgrey"  # Show NA as grey
+  ) +
+  coord_sf(xlim = c(-10, 2.5), ylim = c(49, 61), expand = FALSE) +
+  labs(
+    title = "Willow Warbler Habitat Suitability (2000)",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+
+
+# Filter presence points for 2000
+presence_2000 <- presence_merged %>%
+  filter(YEAR == 2000, ENGLISH_NAME == "Willow Warbler",
+         between(LATITUDE, 49, 61),
+         between(LONGITUDE, -10, 2)) %>%
+  select(LONGITUDE, LATITUDE)
+
+
+
+# Load 2000 suitability raster
+suitability_2000 <- rast("willow_warbler_2000_top5BIOFINAL.tif")
+
+# Convert to dataframe for ggplot
+suitability_2000_df <- as.data.frame(suitability_2000, xy = TRUE, na.rm = TRUE)
+colnames(suitability_2000_df)[3] <- "suitability"
+
+# Plot suitability with presence points
+ggplot() +
+  geom_raster(data = suitability_2000_df, aes(x = x, y = y, fill = suitability)) +
+  geom_sf(data = uk_outline, fill = NA, color = "white", linewidth = 0.3) +
+  geom_point(data = presence_2000, aes(x = LONGITUDE, y = LATITUDE),
+             shape = 21, fill = "red", color = "black", size = 1.4, alpha = 0.7) +
+  scale_fill_viridis_c(
+    name = "Suitability",
+    limits = c(0, 0.6),
+    option = "viridis",
+    oob = scales::squish
+  ) +
+  coord_sf(xlim = c(-10, 2.5), ylim = c(49, 61), expand = FALSE) +
+  labs(
+    title = "Willow Warbler Habitat Suitability and Occurrences (2000)",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_minimal(base_size = 14)
+
+# Define years and file paths
+years <- c("2005", "2010", "2015", "2020")
+suitability_files <- list(
+  "2005" = "willow_warbler_projection_2004_2005_top5BIO.tif",
+  "2010" = "willow_warbler_projection_2009_2010_top5BIO.tif",
+  "2015" = "willow_warbler_projection_2014_2015_top5BIO.tif",
+  "2020" = "willow_warbler_projection_2020_top5BIO.tif"
+)
+
+# Combine rasters into a single dataframe
+suitability_df <- bind_rows(
+  lapply(years, function(y) {
+    df <- raster_to_df(suitability_files[[y]], y)
+    df$Period <- factor(df$Period, levels = years)  # preserve facet order
+    return(df)
+  })
+)
+
+# Plot habitat suitability over time
+ggplot(suitability_df, aes(x = x, y = y, fill = suitability)) +
+  geom_tile() +
+  geom_sf(data = uk_outline, fill = NA, color = "white", linewidth = 0.3, inherit.aes = FALSE) +
+  scale_fill_viridis_c(name = "Suitability", limits = c(0, 0.4), option = "D") +
+  facet_wrap(~Period) +
+  coord_sf(xlim = c(-10, 2.5), ylim = c(49, 61), expand = FALSE) +
+  labs(
+    title = "Willow Warbler Habitat Suitability (2005–2020)",
+    x = "Longitude", y = "Latitude"
+  ) +
+  theme_minimal(base_size = 14)
+
+
+presence_scotland <- presence_merged %>%
+  filter(
+    ENGLISH_NAME == "Willow Warbler",
+    LATITUDE > 56,
+    YEAR %in% c(2005, 2010, 2015, 2019)
+  ) %>%
+  mutate(Period = ifelse(YEAR == 2019, "2020", as.character(YEAR))) %>%
+  select(LONGITUDE, LATITUDE, Period)
+table(presence_scotland$Period)
+
+
+# Create a simple dataframe of counts
+scotland_counts <- data.frame(
+  Year = c(2005, 2010, 2015, 2020),
+  Count = c(237, 286, 371, 451)
+)
+
+# Plot as bar chart
+ggplot(scotland_counts, aes(x = factor(Year), y = Count)) +
+  geom_col(fill = "#1f78b4") +
+  geom_text(aes(label = Count), vjust = -0.5, size = 4) +
+  labs(
+    title = "Increase in Willow Warbler Presence Records in Scotland (LAT > 56)",
+    x = "Year", y = "Number of Records"
+  ) +
+  theme_minimal(base_size = 14) +
+  ylim(0, max(scotland_counts$Count) + 50)
+
+# Define years and matching suitability files
+years <- c("2005", "2010", "2015", "2020")
+suitability_files <- list(
+  "2005" = "willow_warbler_projection_2004_2005_top5BIO.tif",
+  "2010" = "willow_warbler_projection_2009_2010_top5BIO.tif",
+  "2015" = "willow_warbler_projection_2014_2015_top5BIO.tif",
+  "2020" = "willow_warbler_projection_2020_top5BIO.tif"
+)
+
+# Filter presence records for those years (UK-wide)
+presence_all <- presence_merged %>%
+  filter(
+    YEAR %in% c(2005, 2010, 2015, 2019),
+    ENGLISH_NAME == "Willow Warbler",
+    between(LATITUDE, 49, 61),
+    between(LONGITUDE, -10, 2.5)
+  ) %>%
+  mutate(Period = ifelse(YEAR == 2019, "2020", as.character(YEAR)))
+
+# Loop through and plot each year separately
+for (year in years) {
+  
+  # Load raster and convert to dataframe
+  df_suit <- raster_to_df(suitability_files[[year]], year)
+  
+  # Filter matching year's points
+  points_year <- presence_all %>% filter(Period == year)
+  
+  # Create the plot
+  p <- ggplot() +
+    geom_tile(data = df_suit, aes(x = x, y = y, fill = suitability)) +
+    geom_point(data = points_year, aes(x = LONGITUDE, y = LATITUDE),
+               shape = 21, fill = "red", color = "black", size = 1.2, alpha = 0.6) +
+    geom_sf(data = uk_outline, fill = NA, color = "white", linewidth = 0.3) +
+    scale_fill_viridis_c(name = "Suitability", limits = c(0, 0.4), option = "D", na.value = "lightgrey") +
+    coord_sf(xlim = c(-10, 2.5), ylim = c(49, 61), expand = FALSE) +
+    labs(
+      title = paste("Willow Warbler Habitat Suitability and Occurrences (", year, ")", sep = ""),
+      x = "Longitude", y = "Latitude"
+    ) +
+    theme_minimal(base_size = 14)
+  
+  print(p)
+  
+  # Optional: Save plot
+  ggsave(paste0("figures/Suitability_Occurrences_UK_", year, ".png"), plot = p, width = 10, height = 6.5)
+}
+
+
+# =================================
+# 3.3 AUC and TSS Evaluation Trends
+# =================================
+# Create dataframe of evaluation metrics over time
+eval_summary <- data.frame(
+  Period = c("2005", "2010", "2015", "2020"),
+  AUC = c(0.655, 0.466, 0.663, 0.641),
+  TSS = c(0.221, 0.106, 0.269, 0.222)
+)
+
+# Convert to long format for ggplot
+library(tidyr)
+eval_long <- pivot_longer(eval_summary, cols = c("AUC", "TSS"), names_to = "Metric", values_to = "Value")
+
+# Plot: Dual-panel using facet
+fig_auc_tss <- ggplot(eval_long, aes(x = Period, y = Value, group = Metric, colour = Metric)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3, shape = 21, fill = "white") +
+  facet_wrap(~Metric, scales = "free_y") +
+  scale_colour_brewer(palette = "Set1") +
+  ylim(0, 1) +
+  labs(
+    title = "Evaluation of SDM Accuracy Over Time",
+    y = "Metric Value",
+    x = "Projection Year"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    strip.text = element_text(face = "bold"),
+    legend.position = "none"
+  )
+
+# Show plot
+print(fig_auc_tss)
+
+# Save high-quality export
+ggsave("figures/Figure3_EvalMetrics_OverTime.png", fig_auc_tss, width = 8, height = 5.5, dpi = 300)
+
+# ================================
+# 3.4 Latitudinal Centroid Shift map 
+# ================================
+# Load required packages (already loaded earlier)
+library(ggplot2)
+library(patchwork)
+
+# Data: centroids calculated for each time slice
+centroids_map <- data.frame(
+  Period = c("2000", "2005", "2010", "2015", "2020"),
+  Longitude = -1,
+  Latitude = c(53.00, 53.22, 53.38, 53.17, 53.66)
+)
+
+# Plot A: Full UK context
+p_full <- ggplot() +
+  geom_sf(data = uk_outline, fill = "grey95", color = "grey40") +
+  geom_path(data = centroids_map, aes(x = Longitude, y = Latitude), 
+            linetype = "dashed", color = "#1b9e77", linewidth = 1) +
+  geom_point(data = centroids_map, aes(x = Longitude, y = Latitude, fill = Period), 
+             shape = 21, size = 3, color = "black") +
+  scale_fill_brewer(palette = "Dark2") +
+  coord_sf(xlim = c(-10, 2.5), ylim = c(49, 61), expand = FALSE) +
+  labs(title = "A. UK Context", x = "Longitude", y = "Latitude") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
+
+# Plot B: Zoomed in shift
+p_zoom <- ggplot() +
+  geom_sf(data = uk_outline, fill = "grey95", color = "grey40") +
+  geom_path(data = centroids_map, aes(x = Longitude, y = Latitude), 
+            linetype = "dashed", color = "#1b9e77", linewidth = 1) +
+  geom_point(data = centroids_map, aes(x = Longitude, y = Latitude, fill = Period), 
+             shape = 21, size = 3, color = "black") +
+  scale_fill_brewer(palette = "Dark2") +
+  coord_sf(xlim = c(-4, 1.5), ylim = c(52.6, 54.2), expand = FALSE) +
+  labs(title = "B. Zoomed Latitude Shift", x = "Longitude", y = "Latitude") +
+  theme_minimal(base_size = 14) +
+  theme(plot.title = element_text(face = "bold"))
+
+# Combine and plot
+fig_centroids <- p_full + p_zoom + plot_layout(ncol = 2)
+fig_centroids
+
+# Save export
+ggsave("figures/Figure4_Centroid_Shift.png", fig_centroids, width = 10, height = 5.5, dpi = 300)
+
+# ====================================
+# 3.5 Mean Habitat Suitability Trends
+# ====================================
+# Create mean suitability values extracted from model rasters
+mean_suit_df <- data.frame(
+  Period = c("2000", "2005", "2010", "2015", "2020"),
+  MeanSuitability = c(0.043, 0.018, 0.043, 0.029, 0.030)
+)
+
+# Convert Period to ordered factor
+mean_suit_df$Period <- factor(mean_suit_df$Period, levels = c("2000", "2005", "2010", "2015", "2020"))
+
+# Plot
+fig_suit_mean <- ggplot(mean_suit_df, aes(x = Period, y = MeanSuitability, group = 1)) +
+  geom_line(color = "#1f78b4", linewidth = 1.4) +
+  geom_point(size = 3, shape = 21, fill = "white", color = "#1f78b4") +
+  ylim(0, 0.06) +
+  labs(
+    title = "Mean Habitat Suitability (2000–2020)",
+    x = "Projection Year",
+    y = "Mean Suitability Score"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5)
+  )
+
+# Display plot
+print(fig_suit_mean)
+
+# Export
+ggsave("figures/Figure5_MeanSuitability_Trend.png", fig_suit_mean, width = 7, height = 5.5, dpi = 300)
