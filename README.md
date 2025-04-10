@@ -1,2 +1,2 @@
-# Dissertation-WillowWarbler
-This Repo holds my dissertation scripts for the creation of my SDMs and Results Creation
+# Dissertation Code
+### This repo holds my dissertation scripts for the creation of my SDMs and Results.
